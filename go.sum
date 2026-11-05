@@ -1,0 +1,6 @@
+github.com/go-gfx/gfx v0.41.0 h1:MVEnory0Zx8ypzuVDrTIWz4Cekv8hn5ilcYg3glJPrk=
+github.com/go-gfx/gfx v0.41.0/go.mod h1:4OenoKrgdht6UXYf5SV8w2tb41hfAdy4QoxJRPsRDz4=
+github.com/go-gfx/gpu2d v0.2.0 h1:OTjygFlbRd5mZidUu4DZ9KdNmnyiFwUCZYyiMzurHgA=
+github.com/go-gfx/gpu2d v0.2.0/go.mod h1:fMnfIEyW8Pak3vXpQ99VOAOmwcgcvwOit2Q5xUecAwA=
+github.com/go-widgets/painter v0.16.2 h1:Sexcis2Zn279x/KQVW609ZXnbRUvVfcyiW+5/vTXMgM=
+github.com/go-widgets/painter v0.16.2/go.mod h1:8kERcZUoWNyLIas1NsMWiYynvvyx+hcB2cNIh0Bx0yc=
