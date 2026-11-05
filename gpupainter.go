@@ -40,13 +40,20 @@ type Painter struct {
 
 // The capabilities widgets type-assert for, all present.
 var (
-	_ painter.Painter      = (*Painter)(nil)
-	_ painter.Clipper      = (*Painter)(nil)
-	_ painter.Translator   = (*Painter)(nil)
-	_ painter.MaskPainter  = (*Painter)(nil)
-	_ painter.ImagePainter = (*Painter)(nil)
-	_ painter.PathPainter  = (*Painter)(nil)
+	_ painter.Painter       = (*Painter)(nil)
+	_ painter.Clipper       = (*Painter)(nil)
+	_ painter.Translator    = (*Painter)(nil)
+	_ painter.MaskPainter   = (*Painter)(nil)
+	_ painter.ImagePainter  = (*Painter)(nil)
+	_ painter.PathPainter   = (*Painter)(nil)
+	_ painter.RasterPainter = (*Painter)(nil)
 )
+
+// Raster marks the Painter as a painter.RasterPainter: PutPixel lands exactly
+// PixelPainter's pixel (batched into an image, blended identically). Code that
+// composes pixel by pixel, such as the toolkit's bitmap font, therefore sends
+// it the same pixels it sends PixelPainter rather than a Text call.
+func (p *Painter) Raster() {}
 
 // New returns a Painter recording into l.
 func New(l *gpu2d.List) *Painter { return &Painter{l: l, textScale: 1} }

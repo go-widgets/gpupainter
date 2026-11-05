@@ -48,6 +48,9 @@ shifted copy of the path.
 
 - `Clipper` and `Translator`;
 - `MaskPainter` (glyphs), `ImagePainter` and `PathPainter`;
+- `RasterPainter` (go-widgets/painter v0.17.0). Code that composes pixel by
+  pixel, such as the toolkit's bitmap font, sends it the same `PutPixel`s it
+  sends `PixelPainter`, rather than a `Text` call in another font;
 - the built-in 5 × 7 font, with `SetTextScale`, `TextWidth` and `TextHeight`.
 
 `TestMatchesPixelPainter` draws 2000 random scenes with both painters and
