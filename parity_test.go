@@ -82,7 +82,16 @@ func scene(p full, seed uint64, n int) {
 		case 4:
 			p.StrokeRoundRect(rect(), r.IntN(14)-2, col(), r.IntN(4))
 		case 5:
-			p.PutPixel(coord(w), coord(h), col())
+			// A run of pixels, as a colour picker paints: a dense patch,
+			// with repeats now and then so a pixel lands twice in one run.
+			x0, y0 := coord(w), coord(h)
+			for range 1 + r.IntN(60) {
+				x, y := x0+r.IntN(9), y0+r.IntN(9)
+				if r.IntN(10) == 0 {
+					x, y = coord(w), coord(h) // a stray pixel far away
+				}
+				p.PutPixel(x, y, col())
+			}
 		case 6:
 			p.SetTextScale(1 + r.IntN(3))
 			p.Text(coord(w), coord(h), text[:r.IntN(len(text))], col())
@@ -130,7 +139,9 @@ func TestMatchesPixelPainter(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		scene(New(l), seed, 40)
+		gp := New(l)
+		scene(gp, seed, 40)
+		gp.Flush()
 		if err := l.Err(); err != nil {
 			t.Fatal(err)
 		}
@@ -175,6 +186,40 @@ func TestAccessorsAndNoOps(t *testing.T) {
 	p.StrokePath(nil, painter.RGBA{A: 255}, 1)
 	if n := len(l.Instances()); n != 0 {
 		t.Fatalf("%d instances for no-ops", n)
+	}
+}
+
+// A run of pixels becomes one image, a lone pixel a 1 × 1 fill, and List
+// flushes what is pending; a run whose box would pass maxPatch is split.
+func TestPixelRuns(t *testing.T) {
+	l, _ := gpu2d.NewList(64, 64)
+	p := New(l)
+	for y := range 8 {
+		for x := range 8 {
+			p.PutPixel(x, y, painter.RGBA{R: uint8(x), A: 255})
+		}
+	}
+	p.PutPixel(0, 0, painter.RGBA{A: 0}) // transparent: nothing
+	if n := len(l.Instances()); n != 0 {
+		t.Fatalf("%d instances before a flush", n)
+	}
+	got := p.List().Instances()
+	if len(got) != 1 || got[0].Kind != gpu2d.KindImage || got[0].W != 8 || got[0].H != 8 {
+		t.Fatalf("an 8×8 run: %+v", got)
+	}
+	l.Reset()
+	p.PutPixel(3, 3, painter.RGBA{A: 255})
+	p.Flush()
+	if got := l.Instances(); len(got) != 1 || got[0].Kind != gpu2d.KindFill {
+		t.Fatalf("a lone pixel: %+v", got)
+	}
+	l, _ = gpu2d.NewList(2048, 2048)
+	p = New(l)
+	p.PutPixel(0, 0, painter.RGBA{A: 255})
+	p.PutPixel(2000, 2000, painter.RGBA{A: 255}) // a 4M-pixel box: split
+	p.Flush()
+	if n := len(l.Instances()); n != 2 {
+		t.Fatalf("a run past maxPatch: %d instances, want 2", n)
 	}
 }
 
