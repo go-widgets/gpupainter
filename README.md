@@ -37,8 +37,9 @@ for {
 
 `Reset(l)` does not reset `l`. A steady frame through a reused painter and a
 reused list allocates nothing (`TestSteadyFrameAllocatesNothing`, and
-`BenchmarkFrame`: 31 allocs and 84 KB per frame with `New`, 0 with `Reset`
-on a small widget frame). Only a path drawn under a translation still builds a
+`BenchmarkFrame`: 31 allocs, 84 KB and 28.7 µs per frame with `New`; 0
+allocs and 10.0 µs with `Reset`, medians of 8 interleaved rounds on a small
+widget frame, M4 Max, load about 7). Only a path drawn under a translation still builds a
 shifted copy of the path.
 
 ## Same pixels as PixelPainter
