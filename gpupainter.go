@@ -26,6 +26,11 @@ type Painter struct {
 	textScale int
 	glyphs    []byte // scratch RGBA the built-in font is drawn into
 
+	// The built-in font is drawn by PixelPainter; these two are kept so no
+	// frame allocates one: meas answers TextWidth and TextHeight (it has no
+	// surface), scratch is pointed at glyphs for each Text.
+	meas, scratch painter.PixelPainter
+
 	// The run of PutPixel calls being batched (see pixels.go).
 	pending        []pix
 	seen           map[[2]int]struct{}
@@ -45,6 +50,20 @@ var (
 
 // New returns a Painter recording into l.
 func New(l *gpu2d.List) *Painter { return &Painter{l: l, textScale: 1} }
+
+// Reset points the painter at l and returns it to the state New leaves it
+// in: no pending pixels (they are dropped, not recorded: Flush first to keep
+// them), no translation, text scale 1. It keeps every scratch buffer (the
+// glyph surface, the pixel-run patch and index), so a painter reused for
+// each frame allocates nothing once its buffers have grown. It does not
+// reset l: call l.Reset() for a new frame, then p.Reset(l) (or p.Reset(p.List())).
+func (p *Painter) Reset(l *gpu2d.List) {
+	p.l = l
+	p.off = p.off[:0]
+	p.textScale = 1
+	p.pending = p.pending[:0]
+	clear(p.seen)
+}
 
 // List flushes pending pixels and returns the list the painter records into.
 func (p *Painter) List() *gpu2d.List {
@@ -190,12 +209,12 @@ func (p *Painter) TextScale() int { return p.textScale }
 
 // TextWidth is how wide s is drawn in the built-in font.
 func (p *Painter) TextWidth(s string) int {
-	return painter.NewPixelPainter(nil, 0, 0).TextWidth(s) * p.textScale
+	return p.meas.TextWidth(s) * p.textScale
 }
 
 // TextHeight is how tall a line of the built-in font is drawn.
 func (p *Painter) TextHeight() int {
-	return painter.NewPixelPainter(nil, 0, 0).TextHeight() * p.textScale
+	return p.meas.TextHeight() * p.textScale
 }
 
 // Text paints s in the built-in 5 × 7 font. PixelPainter lights each glyph
@@ -215,7 +234,8 @@ func (p *Painter) Text(x, y int, s string, ink painter.RGBA) {
 	}
 	buf := p.glyphs[:n]
 	clear(buf)
-	pp := painter.NewPixelPainter(buf, w, h)
+	pp := &p.scratch
+	pp.Buf, pp.Width, pp.Height = buf, w, h
 	pp.SetTextScale(p.textScale)
 	pp.Text(0, 0, s, painter.RGBA{R: 255, G: 255, B: 255, A: 255})
 	// The alpha channel, in place: byte i of the mask is pixel i's alpha.
