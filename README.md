@@ -17,6 +17,30 @@ _ = r.Draw(l)                  // the frame, on the GPU
 l.Reset()                      // next frame
 ```
 
+## One painter for every frame
+
+`New` is cheap, but a painter's scratch (the glyph surface text is drawn
+into, the patch a run of pixels becomes, the pixel index) grows to its working
+size on the first frame. A painter made per frame pays that again each time:
+on the gallery frame, 3.2 MB per frame. Keep one and `Reset` it:
+
+```go
+l, _ := gpu2d.NewList(w, h)
+p := gpupainter.New(l)
+for {
+	l.Reset()
+	p.Reset(l)                 // no translation, text scale 1, pixels dropped; scratch kept
+	root.Draw(p, theme)
+	_ = r.Draw(p.List())
+}
+```
+
+`Reset(l)` does not reset `l`. A steady frame through a reused painter and a
+reused list allocates nothing (`TestSteadyFrameAllocatesNothing`, and
+`BenchmarkFrame`: 31 allocs and 84 KB per frame with `New`, 0 with `Reset`
+on a small widget frame). Only a path drawn under a translation still builds a
+shifted copy of the path.
+
 ## Same pixels as PixelPainter
 
 `Painter` implements every capability `PixelPainter` has:
