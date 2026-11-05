@@ -87,6 +87,9 @@ func TestResetEqualsNew(t *testing.T) {
 // TestSteadyFrameAllocatesNothing: once the buffers have grown, a frame
 // recorded through a reused painter into a reused list allocates nothing.
 func TestSteadyFrameAllocatesNothing(t *testing.T) {
+	if raceEnabled {
+		t.Skip("the race detector allocates")
+	}
 	l, _ := gpu2d.NewList(200, 120)
 	p := New(l)
 	run := func() {
