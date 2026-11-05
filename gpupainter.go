@@ -17,13 +17,20 @@ import (
 )
 
 // Painter records into a gpu2d list. The list is the caller's: Reset it
-// between frames, hand it to a renderer after the widgets have drawn.
+// between frames, and take it with List (or call Flush) before handing it to
+// a renderer, so that pixels still being batched are recorded.
 type Painter struct {
 	l         *gpu2d.List
 	rz        vector.Rasterizer
 	off       [][2]int
 	textScale int
 	glyphs    []byte // scratch RGBA the built-in font is drawn into
+
+	// The run of PutPixel calls being batched (see pixels.go).
+	pending        []pix
+	seen           map[[2]int]struct{}
+	x0, y0, x1, y1 int
+	patch          []byte
 }
 
 // The capabilities widgets type-assert for, all present.
@@ -39,8 +46,11 @@ var (
 // New returns a Painter recording into l.
 func New(l *gpu2d.List) *Painter { return &Painter{l: l, textScale: 1} }
 
-// List is the list the painter records into.
-func (p *Painter) List() *gpu2d.List { return p.l }
+// List flushes pending pixels and returns the list the painter records into.
+func (p *Painter) List() *gpu2d.List {
+	p.flushPixels()
+	return p.l
+}
 
 func rect(r painter.Rect) gpu2d.Rect { return gpu2d.Rect{X: r.X, Y: r.Y, W: r.W, H: r.H} }
 func rgba(c painter.RGBA) gpu2d.RGBA { return gpu2d.RGBA{R: c.R, G: c.G, B: c.B, A: c.A} }
@@ -49,38 +59,46 @@ func rgba(c painter.RGBA) gpu2d.RGBA { return gpu2d.RGBA{R: c.R, G: c.G, B: c.B,
 func (p *Painter) Size() (int, int) { return p.l.Size() }
 
 // FillRect fills r.
-func (p *Painter) FillRect(r painter.Rect, c painter.RGBA) { p.l.FillRect(rect(r), rgba(c)) }
+func (p *Painter) FillRect(r painter.Rect, c painter.RGBA) {
+	p.flushPixels()
+	p.l.FillRect(rect(r), rgba(c))
+}
 
 // StrokeRect paints lineW concentric outlines inward from r's edge.
 func (p *Painter) StrokeRect(r painter.Rect, c painter.RGBA, lineW int) {
+	p.flushPixels()
 	p.l.StrokeRect(rect(r), rgba(c), lineW)
 }
 
 // FillRoundRect fills r with anti-aliased corners of the given radius.
 func (p *Painter) FillRoundRect(r painter.Rect, radius int, c painter.RGBA) {
+	p.flushPixels()
 	p.l.FillRoundRect(rect(r), radius, rgba(c))
 }
 
 // StrokeRoundRect paints lineW concentric rounded outlines.
 func (p *Painter) StrokeRoundRect(r painter.Rect, radius int, c painter.RGBA, lineW int) {
+	p.flushPixels()
 	p.l.StrokeRoundRect(rect(r), radius, rgba(c), lineW)
-}
-
-// PutPixel paints one pixel: a 1 × 1 fill blends exactly as PutPixel does.
-func (p *Painter) PutPixel(x, y int, c painter.RGBA) {
-	p.l.FillRect(gpu2d.Rect{X: x, Y: y, W: 1, H: 1}, rgba(c))
 }
 
 // PushClip confines drawing to r, translated and intersected as PixelPainter
 // does.
-func (p *Painter) PushClip(r painter.Rect) { p.l.PushClip(rect(r)) }
+func (p *Painter) PushClip(r painter.Rect) {
+	p.flushPixels()
+	p.l.PushClip(rect(r))
+}
 
 // PopClip removes the innermost clip.
-func (p *Painter) PopClip() { p.l.PopClip() }
+func (p *Painter) PopClip() {
+	p.flushPixels()
+	p.l.PopClip()
+}
 
 // PushTranslate shifts what is drawn after it. The painter keeps its own copy
 // of the offset for paths, which reach the rasterizer in surface pixels.
 func (p *Painter) PushTranslate(dx, dy int) {
+	p.flushPixels()
 	ox, oy := p.offset()
 	p.off = append(p.off, [2]int{ox + dx, oy + dy})
 	p.l.PushTranslate(dx, dy)
@@ -88,6 +106,7 @@ func (p *Painter) PushTranslate(dx, dy int) {
 
 // PopTranslate removes the innermost translation.
 func (p *Painter) PopTranslate() {
+	p.flushPixels()
 	if n := len(p.off); n > 0 {
 		p.off = p.off[:n-1]
 	}
@@ -103,16 +122,19 @@ func (p *Painter) offset() (int, int) {
 
 // DrawMask paints ink through 8-bit coverage.
 func (p *Painter) DrawMask(dst painter.Rect, mask []byte, stride int, ink painter.RGBA) {
+	p.flushPixels()
 	p.l.DrawMask(rect(dst), mask, stride, rgba(ink))
 }
 
 // DrawImage draws RGBA pixels scaled into dst by nearest neighbour.
 func (p *Painter) DrawImage(dst painter.Rect, src []byte, srcW, srcH int) {
+	p.flushPixels()
 	p.l.DrawImage(rect(dst), src, srcW, srcH)
 }
 
 // FillPath fills pth with c under rule.
 func (p *Painter) FillPath(pth *painter.Path, c painter.RGBA, rule painter.FillRule) {
+	p.flushPixels()
 	if pth == nil || c.A == 0 {
 		return
 	}
@@ -124,6 +146,7 @@ func (p *Painter) FillPath(pth *painter.Path, c painter.RGBA, rule painter.FillR
 
 // StrokePath paints pth's outline width pixels wide.
 func (p *Painter) StrokePath(pth *painter.Path, c painter.RGBA, width float64) {
+	p.flushPixels()
 	if pth == nil || c.A == 0 {
 		return
 	}
@@ -181,6 +204,7 @@ func (p *Painter) TextHeight() int {
 // buffer with PixelPainter itself, and its alpha goes through DrawMask with
 // the real ink. Coverage 255 blends exactly as PutPixel(ink) does.
 func (p *Painter) Text(x, y int, s string, ink painter.RGBA) {
+	p.flushPixels()
 	if ink.A == 0 || s == "" {
 		return
 	}
